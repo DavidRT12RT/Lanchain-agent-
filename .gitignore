@@ -1,1 +1,8 @@
+
+# Ignorar archivos pyc y carpetas __pycache__
+__pycache__/
+*.py[cod]
+
+# Ignorar entorno virtual (opcional, si está en el proyecto)
+venv/
 .env
