@@ -2,6 +2,7 @@ import os
 import logging
 import redis
 from dotenv import load_dotenv
+import json
 
 from langchain_openai import ChatOpenAI
 from langchain.utilities import WikipediaAPIWrapper
@@ -102,9 +103,9 @@ class EnhancedAgentBot:
     def __init_memory(self):
         """Inicializar memoria redis"""
         try:
-            # Si REDIS_PASSWORD está vacío, usar "123" como está definido en RedisMemory
+            # Si REDIS_PASSWORD está vacío, usar "" como está definido en RedisMemory
             password = REDIS_PASSWORD if REDIS_PASSWORD else ""
-            
+
             # Crear el cliente Redis primero
             redis_client = redis.Redis(
                 host=REDIS_HOST,
@@ -116,11 +117,12 @@ class EnhancedAgentBot:
                 socket_timeout=5,
                 retry_on_timeout=True,
             )
-            
+
             # Verificar que podemos conectarnos
             if not redis_client.ping():
-                raise ConnectionError("No se pudo establecer conexión con Redis")
-                
+                raise ConnectionError(
+                    "No se pudo establecer conexión con Redis")
+
             # Crear RedisMemory con el cliente ya inicializado
             self.memory = RedisMemory(
                 redis_client=redis_client,
@@ -130,9 +132,9 @@ class EnhancedAgentBot:
                 memory_key_name="chat_history",  # Debe coincidir con el nombre en el prompt
                 return_messages=True  # Importante: retorna objetos BaseMessage, no strings
             )
-            
+
             logger.info("Memoria Redis inicializada correctamente!")
-                
+
         except Exception as e:
             logger.error(f"Error inicializando memoria Redis: {e}")
             raise RuntimeError(f"Error inicializando memoria Redis: {e}")
@@ -212,11 +214,47 @@ class EnhancedAgentBot:
 
             # Obtener respuesta del agente
             response = self.agent_executor.invoke({"input": enhanced_question})
+            raw_output_from_llm = response.get("output", "{}")
+
+            actual_answer = "Lo siento, no pude procesar la respuesta correctamente."
+            extracted_preferences = {}
+
+            try:
+                parsed_llm_output = json.loads(raw_output_from_llm)
+                if isinstance(parsed_llm_output, dict):
+                    actual_answer = parsed_llm_output.get(
+                        "answer", actual_answer)
+                    extracted_preferences = parsed_llm_output.get(
+                        "preferences", {})
+                    if not isinstance(extracted_preferences, dict):
+                        logger.warning(
+                            f"Preferencias del LLM no es un diccionario: {extracted_preferences}")
+                else:
+                    # LLM did not return a JSON object as expected
+                    actual_answer = raw_output_from_llm
+                    logger.warning(
+                        "La salida del LLM no fue un objecto JSON como se esperaba")
+
+            except json.JSONDecodeError:
+                actual_answer = raw_output_from_llm
+                logger.error(
+                    f"Error al decoficar JSON de la salida del LLM: {raw_output_from_llm}")
+                raise
+
+            # Guardar preferencias si se extrajeron y hay contexto del usuario
+            if user_id and user_context and extracted_preferences:
+                current_preferences = user_context.get("preferences", {})
+                current_preferences.update(extracted_preferences)
+
+                update_data = {"preferences": current_preferences}
+                self.user_controller.update_user_context(user_id, update_data)
+                logger.info(
+                    f"Preferencias actualizadas para el usuario {user_id} desde el agente")
 
             return {
                 "success": True,
                 "question": question,
-                "answer": response["output"],
+                "answer": actual_answer,
                 "session_id": self.session_id,
                 "user_context": user_context is not None,
             }

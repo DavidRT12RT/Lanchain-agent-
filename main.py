@@ -103,8 +103,10 @@ async def health_check() -> Dict[str, Any]:
 @app.get("/user/{user_id}", response_model=UserDetailResponse)
 async def get_user_detail(
     user_id: str = Path(..., description="ID del usuario a consultar"),
-    sessions_limit: int = Query(10, description="Número máximo de sesiones a retornar"),
-    messages_limit: int = Query(5, description="Número máximo de mensajes recientes a retornar")
+    sessions_limit: int = Query(
+        10, description="Número máximo de sesiones a retornar"),
+    messages_limit: int = Query(
+        5, description="Número máximo de mensajes recientes a retornar")
 ) -> UserDetailResponse:
     """
     Obtiene información detallada del usuario, incluyendo sus preferencias, sesiones y mensajes recientes.
@@ -112,17 +114,19 @@ async def get_user_detail(
     try:
         # Obtener información básica del usuario
         user_result = agent_bot.user_controller.get_user(user_id)
-        
+
         if not user_result["success"]:
             # Si no existe el usuario, devolver error 404
-            raise HTTPException(status_code=404, detail=f"Usuario {user_id} no encontrado")
-        
+            raise HTTPException(
+                status_code=404, detail=f"Usuario {user_id} no encontrado")
+
         user_data = user_result["user"]
-        
+
         # Obtener sesiones del usuario
-        sessions_result = agent_bot.user_controller.get_user_sessions(user_id, limit=sessions_limit)
+        sessions_result = agent_bot.user_controller.get_user_sessions(
+            user_id, limit=sessions_limit)
         sessions = sessions_result.get("sessions", [])
-        
+
         # Convertir sesiones al formato UserSession
         formatted_sessions = []
         for session in sessions:
@@ -132,31 +136,36 @@ async def get_user_detail(
                 type=session.get("type", "chat"),
                 timestamp=session.get("timestamp", "")
             ))
-        
+
         # Intentar obtener mensajes recientes si existe una sesión para el usuario
         recent_messages = []
         try:
             # Crear un ID de sesión basado en el ID del usuario
             session_id = f"session_{user_id}"
-            
+
             # Intentar obtener mensajes de memoria para este usuario
             # Primero verificamos si se ha creado una instancia específica para el usuario
             # Si no existe, usamos la instancia global
             try:
                 # Intentamos usar la instancia global con la sesión del usuario
                 session_specific_bot = EnhancedAgentBot(session_id=session_id)
-                messages_result = session_specific_bot.get_recent_messages(count=messages_limit)
+                messages_result = session_specific_bot.get_recent_messages(
+                    count=messages_limit)
                 if messages_result["success"] and messages_result["messages"]:
                     recent_messages_data = messages_result["messages"]
                 else:
                     # Intentamos recuperar de la sesión global
-                    messages_result = agent_bot.get_recent_messages(count=messages_limit)
-                    recent_messages_data = messages_result.get("messages", []) if messages_result["success"] else []
+                    messages_result = agent_bot.get_recent_messages(
+                        count=messages_limit)
+                    recent_messages_data = messages_result.get(
+                        "messages", []) if messages_result["success"] else []
             except Exception:
                 # Si falla, intentamos directamente con la instancia global
-                messages_result = agent_bot.get_recent_messages(count=messages_limit)
-                recent_messages_data = messages_result.get("messages", []) if messages_result["success"] else []
-            
+                messages_result = agent_bot.get_recent_messages(
+                    count=messages_limit)
+                recent_messages_data = messages_result.get(
+                    "messages", []) if messages_result["success"] else []
+
             # Formatear los mensajes recuperados
             for msg in recent_messages_data:
                 msg_type = msg.get("type", "")
@@ -174,13 +183,14 @@ async def get_user_detail(
                 content=f"Error al recuperar mensajes: {str(e)}",
                 type="system"
             ))
-        
+
         # Verificar si las preferencias son un string JSON y parsearlo, o usar un diccionario vacío
         try:
-            preferences = json.loads(user_data.get("preferences", "{}")) if isinstance(user_data.get("preferences"), str) else user_data.get("preferences", {})
+            preferences = json.loads(user_data.get("preferences", "{}")) if isinstance(
+                user_data.get("preferences"), str) else user_data.get("preferences", {})
         except json.JSONDecodeError:
             preferences = {}
-            
+
         # Construir respuesta
         response = UserDetailResponse(
             success=True,
@@ -194,9 +204,9 @@ async def get_user_detail(
             sessions=formatted_sessions,
             recent_messages=recent_messages
         )
-        
+
         return response
-        
+
     except HTTPException as e:
         # Re-lanzar excepciones HTTP
         raise
